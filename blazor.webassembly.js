@@ -41,9 +41,8 @@
                     result = result.bind(lastSegmentValue);
                     this._cachedFunctions.set(identifier, result);
                     return result;
-                } else {
-                    throw new Error(`The value '${identifier}' is not a function.`);
                 }
+                throw new Error(`The value '${identifier}' is not a function.`);
             }
             getWrappedObject() {
                 return this._jsObject;
@@ -137,11 +136,10 @@
                 };
                 nextJsObjectId++;
                 return result;
-            } else {
-                throw new Error(
-                    `Cannot create a JSObjectReference from the value '${jsObject}'.`
-                );
             }
+            throw new Error(
+                `Cannot create a JSObjectReference from the value '${jsObject}'.`
+            );
         }
         DotNet.createJSObjectReference = createJSObjectReference;
         /**
@@ -176,7 +174,7 @@
             try {
                 const jsObjectReference = createJSObjectReference(streamReference);
                 result[jsObjectIdKey] = jsObjectReference[jsObjectIdKey];
-            } catch {
+            } catch (error) {
                 throw new Error(
                     `Cannot create a JSStreamReference from the value '${streamReference}'.`
                 );
@@ -229,11 +227,10 @@
                     argsJson
                 );
                 return resultJson ? parseJsonWithRevivers(resultJson) : null;
-            } else {
-                throw new Error(
-                    "The current dispatcher does not support synchronous calls from JS to .NET. Use invokeMethodAsync instead."
-                );
             }
+            throw new Error(
+                "The current dispatcher does not support synchronous calls from JS to .NET. Use invokeMethodAsync instead."
+            );
         }
         function invokePossibleInstanceMethodAsync(
             assemblyName,
@@ -371,24 +368,28 @@
                 if (asyncHandle) {
                     // On completion, dispatch result back to .NET
                     // Not using "await" because it codegens a lot of boilerplate
-                    promise.then(
-                        (result) =>
-                            getRequiredDispatcher().endInvokeJSFromDotNet(
+                    promise
+                        .then((result) =>
+                            stringifyArgs([
                                 asyncHandle,
                                 true,
-                                stringifyArgs([
+                                createJSCallResult(result, resultType),
+                            ])
+                        )
+                        .then(
+                            (result) =>
+                                getRequiredDispatcher().endInvokeJSFromDotNet(
                                     asyncHandle,
                                     true,
-                                    createJSCallResult(result, resultType),
-                                ])
-                            ),
-                        (error) =>
-                            getRequiredDispatcher().endInvokeJSFromDotNet(
-                                asyncHandle,
-                                false,
-                                JSON.stringify([asyncHandle, false, formatError(error)])
-                            )
-                    );
+                                    result
+                                ),
+                            (error) =>
+                                getRequiredDispatcher().endInvokeJSFromDotNet(
+                                    asyncHandle,
+                                    false,
+                                    JSON.stringify([asyncHandle, false, formatError(error)])
+                                )
+                        );
                 }
             },
             /**
@@ -405,7 +406,7 @@
                 const resultOrError = success
                     ? parseJsonWithRevivers(resultJsonOrExceptionMessage)
                     : new Error(resultJsonOrExceptionMessage);
-                completePendingCall(parseInt(asyncCallId), success, resultOrError);
+                completePendingCall(parseInt(asyncCallId, 10), success, resultOrError);
             },
             /**
              * Receives notification that a byte array is being transferred from .NET to JS.
@@ -438,19 +439,17 @@
         function formatError(error) {
             if (error instanceof Error) {
                 return `${error.message}\n${error.stack}`;
-            } else {
-                return error ? error.toString() : "null";
             }
+            return error ? error.toString() : "null";
         }
         function findJSFunction(identifier, targetInstanceId) {
-            let targetInstance = cachedJSObjectsById[targetInstanceId];
+            const targetInstance = cachedJSObjectsById[targetInstanceId];
             if (targetInstance) {
                 return targetInstance.findFunction(identifier);
-            } else {
-                throw new Error(
-                    `JS object instance with ID ${targetInstanceId} does not exist (has it been disposed?).`
-                );
             }
+            throw new Error(
+                `JS object instance with ID ${targetInstanceId} does not exist (has it been disposed?).`
+            );
         }
         function disposeJSObjectReferenceById(id) {
             delete cachedJSObjectsById[id];
@@ -498,11 +497,10 @@
                     const jsObject = cachedJSObjectsById[id];
                     if (jsObject) {
                         return jsObject.getWrappedObject();
-                    } else {
-                        throw new Error(
-                            `JS object instance with Id '${id}' does not exist. It may have been disposed.`
-                        );
                     }
+                    throw new Error(
+                        `JS object instance with Id '${id}' does not exist. It may have been disposed.`
+                    );
                 } else if (value.hasOwnProperty(byteArrayRefKey)) {
                     const index = value[byteArrayRefKey];
                     const byteArray = byteArraysToBeRevived.get(index);
@@ -520,7 +518,6 @@
         });
         class DotNetStream {
             constructor(streamId) {
-                var _a;
                 // This constructor runs when we're JSON-deserializing some value from the .NET side.
                 // At this point we might already have started receiving the stream, or maybe it will come later.
                 // We have to handle both possible orderings, but we can count on it coming eventually because
@@ -528,10 +525,7 @@
                 if (pendingDotNetToJSStreams.has(streamId)) {
                     // We've already started receiving the stream, so no longer need to track it as pending
                     this._streamPromise =
-                        (_a = pendingDotNetToJSStreams.get(streamId)) === null ||
-                            _a === void 0
-                            ? void 0
-                            : _a.streamPromise;
+                        pendingDotNetToJSStreams.get(streamId).streamPromise;
                     pendingDotNetToJSStreams.delete(streamId);
                 } else {
                     // We haven't started receiving it yet, so add an entry to track it as pending
@@ -743,6 +737,8 @@
             "mousemove",
             "mousedown",
             "mouseup",
+            "mouseleave",
+            "mouseenter",
             "dblclick",
         ],
         {
@@ -930,6 +926,8 @@
             offsetY: event.offsetY,
             pageX: event.pageX,
             pageY: event.pageY,
+            movementX: event.movementX,
+            movementY: event.movementY,
             button: event.button,
             buttons: event.buttons,
             ctrlKey: event.ctrlKey,
@@ -972,6 +970,7 @@
         }
         throw new Error(`Invalid element type '${type}'.`);
     } // CONCATENATED MODULE: ./Rendering/JSRootComponents.ts
+
 
     const pendingRootComponentContainerNamePrefix = "__bl-dynamic-root:";
     const pendingRootComponentContainers = new Map();
@@ -1115,6 +1114,7 @@
         return manager;
     } // CONCATENATED MODULE: ./Rendering/WebRendererInteropMethods.ts
 
+
     const interopMethodsByRenderer = new Map();
     let resolveRendererAttached;
     const rendererAttached = new Promise((resolve) => {
@@ -1174,6 +1174,7 @@
         dispatchEventMiddleware = middleware;
     } // CONCATENATED MODULE: ./Rendering/Events/EventDelegator.ts
 
+
     const nonBubblingEvents = toLookup([
         "abort",
         "blur",
@@ -1193,6 +1194,8 @@
         "loadstart",
         "mouseenter",
         "mouseleave",
+        "pointerenter",
+        "pointerleave",
         "pause",
         "play",
         "playing",
@@ -1317,7 +1320,10 @@
             let candidateEventTarget = path.shift();
             let eventArgs = null; // Populate lazily
             let eventArgsIsPopulated = false;
-            const eventIsNonBubbling = nonBubblingEvents.hasOwnProperty(eventName);
+            const eventIsNonBubbling = Object.prototype.hasOwnProperty.call(
+                nonBubblingEvents,
+                eventName
+            );
             let stopPropagationWasRequested = false;
             while (candidateEventTarget) {
                 const candidateElement = candidateEventTarget;
@@ -1349,7 +1355,12 @@
                         // For certain built-in events, having any .NET handler implicitly means we will prevent
                         // the browser's default behavior. This has to be based on the original browser event type name,
                         // not any alias (e.g., if you create a custom 'submit' variant, it should still preventDefault).
-                        if (alwaysPreventDefaultEvents.hasOwnProperty(browserEvent.type)) {
+                        if (
+                            Object.prototype.hasOwnProperty.call(
+                                alwaysPreventDefaultEvents,
+                                browserEvent.type
+                            )
+                        ) {
                             browserEvent.preventDefault();
                         }
                         dispatchEvent(
@@ -1379,7 +1390,9 @@
             }
         }
         getEventHandlerInfosForElement(element, createIfNeeded) {
-            if (element.hasOwnProperty(this.eventsCollectionKey)) {
+            if (
+                Object.prototype.hasOwnProperty.call(element, this.eventsCollectionKey)
+            ) {
                 return element[this.eventsCollectionKey];
             } else if (createIfNeeded) {
                 return (element[this.eventsCollectionKey] =
@@ -1415,18 +1428,28 @@
         addGlobalListener(eventName) {
             // If this event name is an alias, update the global listener for the corresponding browser event
             eventName = getBrowserEventName(eventName);
-            if (this.countByEventName.hasOwnProperty(eventName)) {
+            if (
+                Object.prototype.hasOwnProperty.call(this.countByEventName, eventName)
+            ) {
                 this.countByEventName[eventName]++;
             } else {
                 this.countByEventName[eventName] = 1;
                 // To make delegation work with non-bubbling events, register a 'capture' listener.
                 // We preserve the non-bubbling behavior by only dispatching such events to the targeted element.
-                const useCapture = nonBubblingEvents.hasOwnProperty(eventName);
+                const useCapture = Object.prototype.hasOwnProperty.call(
+                    nonBubblingEvents,
+                    eventName
+                );
                 document.addEventListener(eventName, this.globalListener, useCapture);
             }
         }
         update(oldEventHandlerId, newEventHandlerId) {
-            if (this.infosByEventHandlerId.hasOwnProperty(newEventHandlerId)) {
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    this.infosByEventHandlerId,
+                    newEventHandlerId
+                )
+            ) {
                 // Should never happen, but we want to know if it does
                 throw new Error(`Event ${newEventHandlerId} is already tracked`);
             }
@@ -1453,7 +1476,12 @@
             // If an event name alias gets registered later, we need to update the global listener
             // registrations to match. This makes it equivalent to the alias having been registered
             // before the elements with event handlers got rendered.
-            if (this.countByEventName.hasOwnProperty(aliasEventName)) {
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    this.countByEventName,
+                    aliasEventName
+                )
+            ) {
                 // Delete old
                 const countByAliasEventName = this.countByEventName[aliasEventName];
                 delete this.countByEventName[aliasEventName];
@@ -1477,7 +1505,7 @@
             this.stopPropagationFlags = null;
         }
         getHandler(eventName) {
-            return this.handlers.hasOwnProperty(eventName)
+            return Object.prototype.hasOwnProperty.call(this.handlers, eventName)
                 ? this.handlers[eventName]
                 : null;
         }
@@ -1521,7 +1549,10 @@
                 element instanceof HTMLInputElement ||
                 element instanceof HTMLTextAreaElement ||
                 element instanceof HTMLSelectElement) &&
-            disableableEventNames.hasOwnProperty(rawBrowserEventName) &&
+            Object.prototype.hasOwnProperty.call(
+                disableableEventNames,
+                rawBrowserEventName
+            ) &&
             element.disabled
         );
     } // CONCATENATED MODULE: ./Rendering/LogicalElements.ts
@@ -1535,7 +1566,7 @@
     LogicalElement APIs take care of tracking hierarchical relationships separately. The point
     of this is to permit a logical tree structure in which parent/child relationships don't
     have to be materialized in terms of DOM element parent/child relationships. And the reason
-    why we want that is so that hierarchies of Blazor components can be tracked even when those
+    why we want that is so that hierarchies of Razor components can be tracked even when those
     components' render output need not be a single literal DOM element.
   
     Consumers of the API don't need to know about the implementation, but how it's done is:
@@ -1696,7 +1727,7 @@
     function isSvgElement(element) {
         // Note: This check is intentionally case-sensitive since we expect this element
         // to appear as a child of an SVG element and SVGs are case-sensitive.
-        var closestElement = getClosestDomElement(element);
+        const closestElement = getClosestDomElement(element);
         return (
             closestElement.namespaceURI === "http://www.w3.org/2000/svg" &&
             closestElement["tagName"] !== "foreignObject"
@@ -1719,8 +1750,8 @@
         });
         // Phase 2: insert markers
         permutationList.forEach((listEntry) => {
-            const marker = (listEntry.moveToBeforeMarker =
-                document.createComment("marker"));
+            const marker = document.createComment("marker");
+            listEntry.moveToBeforeMarker = marker;
             const insertBeforeNode = siblings[listEntry.toSiblingIndex + 1];
             if (insertBeforeNode) {
                 insertBeforeNode.parentNode.insertBefore(marker, insertBeforeNode);
@@ -1817,6 +1848,7 @@
         return typeof Symbol === "function" ? Symbol() : fallback;
     } // CONCATENATED MODULE: ./Rendering/ElementReferenceCapture.ts
 
+
     function applyCaptureIdToElement(element, referenceCaptureId) {
         element.setAttribute(getCaptureIdAttributeName(referenceCaptureId), "");
     }
@@ -1833,7 +1865,7 @@
         if (
             value &&
             typeof value === "object" &&
-            value.hasOwnProperty(elementRefKey) &&
+            Object.prototype.hasOwnProperty.call(value, elementRefKey) &&
             typeof value[elementRefKey] === "string"
         ) {
             return getElementByCaptureId(value[elementRefKey]);
@@ -1841,6 +1873,7 @@
             return value;
         }
     }); // CONCATENATED MODULE: ./Rendering/BrowserRenderer.ts
+
 
     const deferredValuePropname = "_blazorDeferredValue";
     const sharedTemplateElemForParsing = document.createElement("template");
@@ -1989,7 +2022,7 @@
                             parent,
                             childIndexAtCurrentDepth + siblingIndex
                         );
-                        if (element instanceof HTMLElement) {
+                        if (element instanceof Element) {
                             const attributeName = editReader.removedAttributeName(edit);
                             // First try to remove any special property we use for this attribute
                             if (
@@ -2138,9 +2171,10 @@
                 case FrameType.markup:
                     this.insertMarkup(batch, parent, childIndex, frame);
                     return 1;
-                default:
+                default: {
                     const unknownType = frameType; // Compile-time verification that the switch was exhaustive
                     throw new Error(`Unknown frame type: ${unknownType}`);
+                }
             }
         }
         insertElement(
@@ -2580,7 +2614,6 @@
         }
     } // CONCATENATED MODULE: ./Rendering/Renderer.ts
 
-    /* eslint-disable @typescript-eslint/camelcase */
 
     const browserRenderers = {};
     let shouldResetScrollAfterNextBatch = false;
@@ -2592,8 +2625,8 @@
     ) {
         let browserRenderer = browserRenderers[browserRendererId];
         if (!browserRenderer) {
-            browserRenderer = browserRenderers[browserRendererId] =
-                new BrowserRenderer(browserRendererId);
+            browserRenderer = new BrowserRenderer(browserRendererId);
+            browserRenderers[browserRendererId] = browserRenderer;
         }
         browserRenderer.attachRootComponentToLogicalElement(
             componentId,
@@ -2708,28 +2741,51 @@
         }
     } // CONCATENATED MODULE: ./Services/NavigationManager.ts
 
+
     let hasEnabledNavigationInterception = false;
     let hasRegisteredNavigationEventListeners = false;
+    let hasLocationChangingEventListeners = false;
+    let currentHistoryIndex = 0;
+    let currentLocationChangingCallId = 0;
     // Will be initialized once someone registers
     let notifyLocationChangedCallback = null;
+    let notifyLocationChangingCallback = null;
+    let popStateCallback = onBrowserInitiatedPopState;
+    let resolveCurrentNavigation = null;
     // These are the functions we're making available for invocation from .NET
     const internalFunctions = {
         listenForNavigationEvents,
         enableNavigationInterception,
-        navigateTo,
+        setHasLocationChangingListeners,
+        endLocationChanging,
+        navigateTo: navigateToFromDotNet,
         getBaseURI: () => document.baseURI,
         getLocationHref: () => location.href,
     };
-    function listenForNavigationEvents(callback) {
-        notifyLocationChangedCallback = callback;
+    function listenForNavigationEvents(
+        locationChangedCallback,
+        locationChangingCallback
+    ) {
+        var _a, _b;
+        notifyLocationChangedCallback = locationChangedCallback;
+        notifyLocationChangingCallback = locationChangingCallback;
         if (hasRegisteredNavigationEventListeners) {
             return;
         }
         hasRegisteredNavigationEventListeners = true;
-        window.addEventListener("popstate", () => notifyLocationChanged(false));
+        window.addEventListener("popstate", onPopState);
+        currentHistoryIndex =
+            (_b =
+                (_a = history.state) === null || _a === void 0 ? void 0 : _a._index) !==
+                null && _b !== void 0
+                ? _b
+                : 0;
     }
     function enableNavigationInterception() {
         hasEnabledNavigationInterception = true;
+    }
+    function setHasLocationChangingListeners(hasListeners) {
+        hasLocationChangingEventListeners = hasListeners;
     }
     function attachToEventDelegator(eventDelegator) {
         // We need to respond to clicks on <a> elements *after* the EventDelegator has finished
@@ -2768,7 +2824,6 @@
         forceLoadOrOptions,
         replaceIfUsingOldOverload = false
     ) {
-        const absoluteUri = toAbsoluteUri(uri);
         // Normalize the parameters to the newer overload (i.e., using NavigationOptions)
         const options =
             forceLoadOrOptions instanceof Object
@@ -2777,11 +2832,22 @@
                     forceLoad: forceLoadOrOptions,
                     replaceHistoryEntry: replaceIfUsingOldOverload,
                 };
+        navigateToCore(uri, options);
+    }
+    function navigateToFromDotNet(uri, options) {
+        // The location changing callback is called from .NET for programmatic navigations originating from .NET.
+        // In this case, we shouldn't invoke the callback again from the JS side.
+        navigateToCore(uri, options, /* skipLocationChangingCallback */ true);
+    }
+    function navigateToCore(uri, options, skipLocationChangingCallback = false) {
+        const absoluteUri = toAbsoluteUri(uri);
         if (!options.forceLoad && isWithinBaseUriSpace(absoluteUri)) {
             performInternalNavigation(
                 absoluteUri,
                 false,
-                options.replaceHistoryEntry
+                options.replaceHistoryEntry,
+                options.historyEntryState,
+                skipLocationChangingCallback
             );
         } else {
             // For external navigation, we work in terms of the originally-supplied uri string,
@@ -2805,11 +2871,24 @@
             location.href = uri;
         }
     }
-    function performInternalNavigation(
+    async function performInternalNavigation(
         absoluteInternalHref,
         interceptedLink,
-        replace
+        replace,
+        state = undefined,
+        skipLocationChangingCallback = false
     ) {
+        ignorePendingNavigation();
+        if (!skipLocationChangingCallback && hasLocationChangingEventListeners) {
+            const shouldContinueNavigation = await notifyLocationChanging(
+                absoluteInternalHref,
+                state,
+                interceptedLink
+            );
+            if (!shouldContinueNavigation) {
+                return;
+            }
+        }
         // Since this was *not* triggered by a back/forward gesture (that goes through a different
         // code path starting with a popstate event), we don't want to preserve the current scroll
         // position, so reset it.
@@ -2817,16 +2896,115 @@
         // we render the new page. As a best approximation, wait until the next batch.
         resetScrollAfterNextBatch();
         if (!replace) {
-            history.pushState(null, /* ignored title */ "", absoluteInternalHref);
+            currentHistoryIndex++;
+            history.pushState(
+                {
+                    userState: state,
+                    _index: currentHistoryIndex,
+                },
+        /* ignored title */ "",
+                absoluteInternalHref
+            );
         } else {
-            history.replaceState(null, /* ignored title */ "", absoluteInternalHref);
+            history.replaceState(
+                {
+                    userState: state,
+                    _index: currentHistoryIndex,
+                },
+        /* ignored title */ "",
+                absoluteInternalHref
+            );
         }
-        notifyLocationChanged(interceptedLink);
+        await notifyLocationChanged(interceptedLink);
+    }
+    function navigateHistoryWithoutPopStateCallback(delta) {
+        return new Promise((resolve) => {
+            const oldPopStateCallback = popStateCallback;
+            popStateCallback = () => {
+                popStateCallback = oldPopStateCallback;
+                resolve();
+            };
+            history.go(delta);
+        });
+    }
+    function ignorePendingNavigation() {
+        if (resolveCurrentNavigation) {
+            resolveCurrentNavigation(false);
+            resolveCurrentNavigation = null;
+        }
+    }
+    function notifyLocationChanging(uri, state, intercepted) {
+        return new Promise((resolve) => {
+            ignorePendingNavigation();
+            if (!notifyLocationChangingCallback) {
+                resolve(false);
+                return;
+            }
+            currentLocationChangingCallId++;
+            resolveCurrentNavigation = resolve;
+            notifyLocationChangingCallback(
+                currentLocationChangingCallId,
+                uri,
+                state,
+                intercepted
+            );
+        });
+    }
+    function endLocationChanging(callId, shouldContinueNavigation) {
+        if (resolveCurrentNavigation && callId === currentLocationChangingCallId) {
+            resolveCurrentNavigation(shouldContinueNavigation);
+            resolveCurrentNavigation = null;
+        }
+    }
+    async function onBrowserInitiatedPopState(state) {
+        var _a, _b, _c;
+        ignorePendingNavigation();
+        if (hasLocationChangingEventListeners) {
+            const index =
+                (_b =
+                    (_a = state.state) === null || _a === void 0 ? void 0 : _a._index) !==
+                    null && _b !== void 0
+                    ? _b
+                    : 0;
+            const userState =
+                (_c = state.state) === null || _c === void 0 ? void 0 : _c.userState;
+            const delta = index - currentHistoryIndex;
+            const uri = location.href;
+            // Temporarily revert the navigation until we confirm if the navigation should continue.
+            await navigateHistoryWithoutPopStateCallback(-delta);
+            const shouldContinueNavigation = await notifyLocationChanging(
+                uri,
+                userState,
+                false
+            );
+            if (!shouldContinueNavigation) {
+                return;
+            }
+            await navigateHistoryWithoutPopStateCallback(delta);
+        }
+        await notifyLocationChanged(false);
     }
     async function notifyLocationChanged(interceptedLink) {
+        var _a;
         if (notifyLocationChangedCallback) {
-            await notifyLocationChangedCallback(location.href, interceptedLink);
+            await notifyLocationChangedCallback(
+                location.href,
+                (_a = history.state) === null || _a === void 0 ? void 0 : _a.userState,
+                interceptedLink
+            );
         }
+    }
+    async function onPopState(state) {
+        var _a, _b;
+        if (popStateCallback) {
+            await popStateCallback(state);
+        }
+        currentHistoryIndex =
+            (_b =
+                (_a = history.state) === null || _a === void 0 ? void 0 : _a._index) !==
+                null && _b !== void 0
+                ? _b
+                : 0;
     }
     let testAnchor;
     function toAbsoluteUri(relativeUri) {
@@ -2868,13 +3046,20 @@
                 : findClosestAnchorAncestorLegacy(element.parentElement, tagName);
     }
     function isWithinBaseUriSpace(href) {
-        const baseUriWithTrailingSlash = toBaseUriWithTrailingSlash(
+        const baseUriWithoutTrailingSlash = toBaseUriWithoutTrailingSlash(
             document.baseURI
-        ); // TODO: Might baseURI really be null?
-        return href.startsWith(baseUriWithTrailingSlash);
+        );
+        const nextChar = href.charAt(baseUriWithoutTrailingSlash.length);
+        return (
+            href.startsWith(baseUriWithoutTrailingSlash) &&
+            (nextChar === "" ||
+                nextChar === "/" ||
+                nextChar === "?" ||
+                nextChar === "#")
+        );
     }
-    function toBaseUriWithTrailingSlash(baseUri) {
-        return baseUri.substr(0, baseUri.lastIndexOf("/") + 1);
+    function toBaseUriWithoutTrailingSlash(baseUri) {
+        return baseUri.substring(0, baseUri.lastIndexOf("/"));
     }
     function eventHasSpecialKey(event) {
         return event.ctrlKey || event.shiftKey || event.altKey || event.metaKey;
@@ -2889,6 +3074,7 @@
             !anchorTarget.hasAttribute("download")
         );
     } // CONCATENATED MODULE: ./DomWrapper.ts
+
 
     const domFunctions = {
         focus: DomWrapper_focus,
@@ -2928,7 +3114,15 @@
     };
     const observersByDotNetId = {};
     function findClosestScrollContainer(element) {
-        if (!element) {
+        // If we recurse up as far as body or the document root, return null so that the
+        // IntersectionObserver observes intersection with the top-level scroll viewport
+        // instead of the with body/documentElement which can be arbitrarily tall.
+        // See https://github.com/dotnet/aspnetcore/issues/37659 for more about what this fixes.
+        if (
+            !element ||
+            element === document.body ||
+            element === document.documentElement
+        ) {
             return null;
         }
         const style = getComputedStyle(element);
@@ -3047,6 +3241,7 @@
         }
     } // CONCATENATED MODULE: ./PageTitle.ts
 
+
     const PageTitle = {
         getAndRemoveExistingTitle,
     };
@@ -3159,11 +3354,37 @@
         const file = elem._blazorFilesById[fileId];
         if (!file) {
             throw new Error(
-                `There is no file with ID ${fileId}. The file list may have changed.`
+                `There is no file with ID ${fileId}. The file list may have changed. See https://aka.ms/aspnet/blazor-input-file-multiple-selections.`
             );
         }
         return file;
+    } // CONCATENATED MODULE: ./NavigationLock.ts
+
+    const registeredLocks = new Set();
+    const NavigationLock = {
+        enableNavigationPrompt,
+        disableNavigationPrompt,
+    };
+    function onBeforeUnload(event) {
+        event.preventDefault();
+        // Modern browsers display a confirmation prompt when returnValue is some value other than
+        // null or undefined.
+        // See: https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event#compatibility_notes
+        event.returnValue = true;
+    }
+    function enableNavigationPrompt(id) {
+        if (registeredLocks.size === 0) {
+            window.addEventListener("beforeunload", onBeforeUnload);
+        }
+        registeredLocks.add(id);
+    }
+    function disableNavigationPrompt(id) {
+        registeredLocks.delete(id);
+        if (registeredLocks.size === 0) {
+            window.removeEventListener("beforeunload", onBeforeUnload);
+        }
     } // CONCATENATED MODULE: ./StreamingInterop.ts
+
 
     async function getNextChunk(data, position, nextChunkSize) {
         if (data instanceof Blob) {
@@ -3211,6 +3432,7 @@
         }
     } // CONCATENATED MODULE: ./GlobalExports.ts
 
+
     const Blazor = {
         navigateTo: navigateTo,
         registerCustomEventType: registerCustomEventType,
@@ -3221,6 +3443,7 @@
             Virtualize: Virtualize,
             PageTitle: PageTitle,
             InputFile: InputFile,
+            NavigationLock: NavigationLock,
             getJSDataStreamChunk: getNextChunk,
             receiveDotNetDataStream: receiveDotNetDataStream,
             attachWebRendererInterop: attachWebRendererInterop,
@@ -3235,19 +3458,33 @@
         return platform;
     } // CONCATENATED MODULE: ./Platform/Mono/MonoDebugger.ts
 
-    const currentBrowserIsChrome =
-        window.chrome && navigator.userAgent.indexOf("Edge") < 0; // Edge pretends to be Chrome
+    var _a, _b;
+    const navigatorUA = navigator;
+    const brands = navigatorUA.userAgentData && navigatorUA.userAgentData.brands;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const currentBrowserIsChromeOrEdge = brands
+        ? brands.some(
+            (b) => b.brand === "Google Chrome" || b.brand === "Microsoft Edge"
+        )
+        : window.chrome;
+    const MonoDebugger_platform =
+        (_b =
+            (_a = navigatorUA.userAgentData) === null || _a === void 0
+                ? void 0
+                : _a.platform) !== null && _b !== void 0
+            ? _b
+            : navigator.platform;
     let hasReferencedPdbs = false;
     let debugBuild = false;
     function hasDebuggingEnabled() {
-        return (hasReferencedPdbs || debugBuild) && currentBrowserIsChrome;
+        return (hasReferencedPdbs || debugBuild) && currentBrowserIsChromeOrEdge;
     }
     function attachDebuggerHotkey(resourceLoader) {
         hasReferencedPdbs = !!resourceLoader.bootConfig.resources.pdb;
         debugBuild = resourceLoader.bootConfig.debugBuild;
         // Use the combination shift+alt+D because it isn't used by the major browsers
         // for anything else by default
-        const altKeyName = navigator.platform.match(/^Mac/i) ? "Cmd" : "Alt";
+        const altKeyName = MonoDebugger_platform.match(/^Mac/i) ? "Cmd" : "Alt";
         if (hasDebuggingEnabled()) {
             console.info(
                 `Debugging hotkey: Shift+${altKeyName}+D (when application has focus)`
@@ -3260,7 +3497,7 @@
                     console.error(
                         "Cannot start debugging, because the application was not compiled with debugging enabled."
                     );
-                } else if (!currentBrowserIsChrome) {
+                } else if (!currentBrowserIsChromeOrEdge) {
                     console.error(
                         "Currently, only Microsoft Edge (80+), or Google Chrome, are supported for debugging."
                     );
@@ -3286,8 +3523,8 @@
     } // CONCATENATED MODULE: ./BootErrors.ts
 
     let hasFailed = false;
-    async function showErrorNotification() {
-        let errorUi = document.querySelector("#blazor-error-ui");
+    function showErrorNotification() {
+        const errorUi = document.querySelector("#blazor-error-ui");
         if (errorUi) {
             errorUi.style.display = "block";
         }
@@ -3302,7 +3539,7 @@
                     e.preventDefault();
                 };
             });
-            let errorUiDismiss = document.querySelectorAll(
+            const errorUiDismiss = document.querySelectorAll(
                 "#blazor-error-ui .dismiss"
             );
             errorUiDismiss.forEach((dismiss) => {
@@ -3356,7 +3593,7 @@
                 "ASPNETCORE-BROWSER-TOOLS"
             );
             return new BootConfigResult(bootConfig, applicationEnvironment);
-            async function defaultLoadBlazorBootJson(url) {
+            function defaultLoadBlazorBootJson(url) {
                 return fetch(url, {
                     method: "GET",
                     credentials: "include",
@@ -3372,7 +3609,12 @@
         ICUDataMode[(ICUDataMode["Invariant"] = 2)] = "Invariant";
     })(ICUDataMode || (ICUDataMode = {})); // CONCATENATED MODULE: ./Platform/Mono/MonoPlatform.ts
 
-    let mono_wasm_add_assembly;
+
+    // initially undefined and only fully initialized after createEmscriptenModuleInstance()
+    let BINDING = undefined;
+    let MONO = undefined;
+    let Module = undefined;
+    let IMPORTS = undefined;
     const appBinDirName = "appBinDir";
     const uint64HighOrderShift = Math.pow(2, 32);
     const maxSafeNumberHighPart = Math.pow(2, 21) - 1; // The high-order int32 from Number.MAX_SAFE_INTEGER
@@ -3381,13 +3623,13 @@
     // The implementations are exactly equivalent to what the global getValue(addr, type) function does,
     // except without having to parse the 'type' parameter, and with less risk of mistakes at the call site
     function getValueI16(ptr) {
-        return Module.HEAP16[ptr >> 1];
+        return MONO.getI16(ptr);
     }
     function getValueI32(ptr) {
-        return Module.HEAP32[ptr >> 2];
+        return MONO.getI32(ptr);
     }
     function getValueFloat(ptr) {
-        return Module.HEAPF32[ptr >> 2];
+        return MONO.getF32(ptr);
     }
     function getValueU64(ptr) {
         // There is no Module.HEAPU64, and Module.getValue(..., 'i64') doesn't work because the implementation
@@ -3402,25 +3644,9 @@
         return highPart * uint64HighOrderShift + Module.HEAPU32[heapU32Index];
     }
     const monoPlatform = {
-        start: function start(resourceLoader) {
-            return new Promise((resolve, reject) => {
-                attachDebuggerHotkey(resourceLoader);
-                // dotnet.js assumes the existence of this
-                window["Browser"] = {
-                    init: () => { },
-                };
-                // Emscripten works by expecting the module config to be a global
-                // For compatibility with macOS Catalina, we have to assign a temporary value to window.Module
-                // before we start loading the WebAssembly files
-                addGlobalModuleScriptTagsToDocument(() => {
-                    window["Module"] = createEmscriptenModuleInstance(
-                        resourceLoader,
-                        resolve,
-                        reject
-                    );
-                    addScriptTagsToDocument(resourceLoader);
-                });
-            });
+        start: async function start(resourceLoader) {
+            attachDebuggerHotkey(resourceLoader);
+            await createEmscriptenModuleInstance(resourceLoader);
         },
         callEntryPoint: async function callEntryPoint(assemblyName) {
             const emptyArray = [[]];
@@ -3514,7 +3740,7 @@
             }
         },
     };
-    function addScriptTagsToDocument(resourceLoader) {
+    async function importDotnetJs(resourceLoader) {
         const browserSupportsNativeWebAssembly =
             typeof WebAssembly !== "undefined" && WebAssembly.validate;
         if (!browserSupportsNativeWebAssembly) {
@@ -3529,65 +3755,94 @@
         ).filter((n) => n.startsWith("dotnet.") && n.endsWith(".js"))[0];
         const dotnetJsContentHash =
             resourceLoader.bootConfig.resources.runtime[dotnetJsResourceName];
-        const scriptElem = document.createElement("script");
-        scriptElem.src = `_framework/${dotnetJsResourceName}`;
-        scriptElem.defer = true;
-        // For consistency with WebAssemblyResourceLoader, we only enforce SRI if caching is allowed
-        if (resourceLoader.bootConfig.cacheBootResources) {
-            scriptElem.integrity = dotnetJsContentHash;
-            scriptElem.crossOrigin = "anonymous";
-        }
+        let src = `_framework/${dotnetJsResourceName}`;
         // Allow overriding the URI from which the dotnet.*.js file is loaded
         if (resourceLoader.startOptions.loadBootResource) {
             const resourceType = "dotnetjs";
             const customSrc = resourceLoader.startOptions.loadBootResource(
                 resourceType,
                 dotnetJsResourceName,
-                scriptElem.src,
+                src,
                 dotnetJsContentHash
             );
             if (typeof customSrc === "string") {
-                scriptElem.src = customSrc;
+                src = customSrc;
             } else if (customSrc) {
-                // Since we must load this via a <script> tag, it's only valid to supply a URI (and not a Request, say)
+                // Since we must load this via a import, it's only valid to supply a URI (and not a Request, say)
                 throw new Error(
                     `For a ${resourceType} resource, custom loaders must supply a URI string.`
                 );
             }
         }
-        document.body.appendChild(scriptElem);
+        // For consistency with WebAssemblyResourceLoader, we only enforce SRI if caching is allowed
+        if (resourceLoader.bootConfig.cacheBootResources) {
+            const scriptElem = document.createElement("link");
+            scriptElem.rel = "modulepreload";
+            scriptElem.href = src;
+            scriptElem.crossOrigin = "anonymous";
+            // it will make dynamic import fail if the hash doesn't match
+            // It's currently only validated by chromium browsers
+            // Firefox doesn't break on it, but doesn't validate it either
+            scriptElem.integrity = dotnetJsContentHash;
+            document.head.appendChild(scriptElem);
+        }
+        // GOTCHA: remove this once runtime switched to ES6
+        // this is capturing the export via callback we have in CJS version of the runtime
+        let cjsExportResolve = undefined;
+        const cjsExport = new Promise((resolve) => {
+            cjsExportResolve = resolve;
+        });
+        globalThis.__onDotnetRuntimeLoaded = (createDotnetRuntime) => {
+            delete globalThis.__onDotnetRuntimeLoaded;
+            cjsExportResolve(createDotnetRuntime);
+        };
+        const absoluteSrc = new URL(src, document.baseURI).toString();
+        const { default: createDotnetRuntime } = await import(
+      /* webpackIgnore: true */ absoluteSrc
+        );
+        if (createDotnetRuntime) {
+            // this runs when loaded module was ES6
+            delete globalThis.__onDotnetRuntimeLoaded;
+            return createDotnetRuntime;
+        }
+        return await cjsExport;
     }
-    // Due to a strange behavior in macOS Catalina, we have to delay loading the WebAssembly files
-    // until after it finishes evaluating a <script> element that assigns a value to window.Module.
-    // This may be fixed in a later version of macOS/iOS, or even if not it may be possible to reduce
-    // this to a smaller workaround.
-    function addGlobalModuleScriptTagsToDocument(callback) {
-        const scriptElem = document.createElement("script");
-        // This pollutes global but is needed so it can be called from the script.
-        // The callback is put in the global scope so that it can be run after the script is loaded.
-        // onload cannot be used in this case for non-file scripts.
-        window["__wasmmodulecallback__"] = callback;
-        // Note: Any updates to the following script will require updating the inline script hash if using CSP
-        scriptElem.text =
-            "var Module; window.__wasmmodulecallback__(); delete window.__wasmmodulecallback__;";
-        document.body.appendChild(scriptElem);
-    }
-    function createEmscriptenModuleInstance(resourceLoader, onReady, onError) {
+    async function createEmscriptenModuleInstance(resourceLoader) {
+        let runtimeReadyResolve = undefined;
+        let runtimeReadyReject = undefined;
+        const runtimeReady = new Promise((resolve, reject) => {
+            runtimeReadyResolve = resolve;
+            runtimeReadyReject = reject;
+        });
+        const dotnetJsBeingLoaded = importDotnetJs(resourceLoader);
         const resources = resourceLoader.bootConfig.resources;
-        const module = window["Module"] || {};
+        const moduleConfig = window["Module"] || {};
         const suppressMessages = ["DEBUGGING ENABLED"];
-        module.print = (line) =>
+        const print = (line) =>
             suppressMessages.indexOf(line) < 0 && console.log(line);
-        module.printErr = (line) => {
+        const printErr = (line) => {
             // If anything writes to stderr, treat it as a critical exception. The underlying runtime writes
             // to stderr if a truly critical problem occurs outside .NET code. Note that .NET unhandled
             // exceptions also reach this, but via a different code path - see dotNetCriticalError below.
             console.error(line);
             showErrorNotification();
         };
-        module.preRun = module.preRun || [];
-        module.postRun = module.postRun || [];
-        module.preloadPlugins = [];
+        const existingPreRun = moduleConfig.preRun || [];
+        const existingPostRun = moduleConfig.postRun || [];
+        moduleConfig.preloadPlugins = [];
+        let resourcesLoaded = 0;
+        function setProgress() {
+            resourcesLoaded++;
+            const percentage = (resourcesLoaded / totalResources.length) * 100;
+            document.documentElement.style.setProperty(
+                "--blazor-load-percentage",
+                `${percentage}%`
+            );
+            document.documentElement.style.setProperty(
+                "--blazor-load-percentage-text",
+                `"${Math.floor(percentage)}%"`
+            );
+        }
         // Begin loading the .dll/.pdb/.wasm files, but don't block here. Let other loading processes run in parallel.
         const dotnetWasmResourceName = "dotnet.wasm";
         const assembliesBeingLoaded = resourceLoader.loadResources(
@@ -3608,6 +3863,13 @@
             ],
       /* type */ "dotnetwasm"
         );
+        const totalResources = assembliesBeingLoaded.concat(
+            pdbsBeingLoaded,
+            wasmBeingLoaded
+        );
+        totalResources.forEach((loadingResource) =>
+            loadingResource.response.then((_) => setProgress())
+        );
         const dotnetTimeZoneResourceName = "dotnet.timezones.blat";
         let timeZoneResource;
         if (
@@ -3621,9 +3883,11 @@
                 resourceLoader.bootConfig.resources.runtime[dotnetTimeZoneResourceName],
                 "globalization"
             );
+            totalResources.push(timeZoneResource);
+            timeZoneResource.response.then((_) => setProgress());
         }
         let icuDataResource;
-        if (resourceLoader.bootConfig.icuDataMode != ICUDataMode.Invariant) {
+        if (resourceLoader.bootConfig.icuDataMode !== ICUDataMode.Invariant) {
             const applicationCulture =
                 resourceLoader.startOptions.applicationCulture ||
                 (navigator.languages && navigator.languages[0]);
@@ -3637,286 +3901,309 @@
                 resourceLoader.bootConfig.resources.runtime[icuDataResourceName],
                 "globalization"
             );
+            totalResources.push(icuDataResource);
+            icuDataResource.response.then((_) => setProgress());
         }
-        // Override the mechanism for fetching the main wasm file so we can connect it to our cache
-        module.instantiateWasm = (imports, successCallback) => {
-            (async () => {
-                let compiledInstance;
-                try {
-                    const dotnetWasmResource = await wasmBeingLoaded;
-                    compiledInstance = await compileWasmModule(
-                        dotnetWasmResource,
-                        imports
-                    );
-                } catch (ex) {
-                    module.printErr(ex.toString());
-                    throw ex;
-                }
-                successCallback(compiledInstance);
-            })();
-            return []; // No exports
-        };
-        // Environment variables could be set via mono only after the runtime is ready.
-        module.onRuntimeInitialized = () => {
-            if (!icuDataResource) {
-                // Use invariant culture if the app does not carry icu data.
-                MONO.mono_wasm_setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1");
-            }
-        };
-        module.preRun.push(() => {
-            // By now, emscripten should be initialised enough that we can capture these methods for later use
-            mono_wasm_add_assembly = cwrap("mono_wasm_add_assembly", null, [
-                "string",
-                "number",
-                "number",
-            ]);
-            MONO.loaded_files = [];
-            if (timeZoneResource) {
-                loadTimezone(timeZoneResource);
-            }
-            if (icuDataResource) {
-                loadICUData(icuDataResource);
-            }
-            // Fetch the assemblies and PDBs in the background, telling Mono to wait until they are loaded
-            // Mono requires the assembly filenames to have a '.dll' extension, so supply such names regardless
-            // of the extensions in the URLs. This allows loading assemblies with arbitrary filenames.
-            assembliesBeingLoaded.forEach((r) =>
-                addResourceAsAssembly(r, changeExtension(r.name, ".dll"))
-            );
-            pdbsBeingLoaded.forEach((r) => addResourceAsAssembly(r, r.name));
-            Blazor._internal.dotNetCriticalError = (message) => {
-                module.printErr(BINDING.conv_string(message) || "(null)");
+        const createDotnetRuntime = await dotnetJsBeingLoaded;
+        await createDotnetRuntime((api) => {
+            const {
+                MONO: mono,
+                BINDING: binding,
+                Module: module,
+                IMPORTS: imports,
+            } = api;
+            Module = module;
+            BINDING = binding;
+            MONO = mono;
+            IMPORTS = imports;
+            // Override the mechanism for fetching the main wasm file so we can connect it to our cache
+            const instantiateWasm = (wasmImports, successCallback) => {
+                (async () => {
+                    let compiledInstance;
+                    try {
+                        const dotnetWasmResource = await wasmBeingLoaded;
+                        compiledInstance = await compileWasmModule(
+                            dotnetWasmResource,
+                            wasmImports
+                        );
+                    } catch (ex) {
+                        printErr(ex.toString());
+                        throw ex;
+                    }
+                    successCallback(compiledInstance);
+                })();
+                return []; // No exports
             };
-            // Wire-up callbacks for satellite assemblies. Blazor will call these as part of the application
-            // startup sequence to load satellite assemblies for the application's culture.
-            Blazor._internal.getSatelliteAssemblies = (culturesToLoadDotNetArray) => {
-                const culturesToLoad = BINDING.mono_array_to_js_array(
-                    culturesToLoadDotNetArray
+            const onRuntimeInitialized = () => {
+                if (!icuDataResource) {
+                    // Use invariant culture if the app does not carry icu data.
+                    MONO.mono_wasm_setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1");
+                }
+            };
+            const preRun = () => {
+                if (timeZoneResource) {
+                    loadTimezone(timeZoneResource);
+                }
+                if (icuDataResource) {
+                    loadICUData(icuDataResource);
+                }
+                // Fetch the assemblies and PDBs in the background, telling Mono to wait until they are loaded
+                // Mono requires the assembly filenames to have a '.dll' extension, so supply such names regardless
+                // of the extensions in the URLs. This allows loading assemblies with arbitrary filenames.
+                assembliesBeingLoaded.forEach((r) =>
+                    addResourceAsAssembly(r, changeExtension(r.name, ".dll"))
                 );
-                const satelliteResources =
-                    resourceLoader.bootConfig.resources.satelliteResources;
-                const applicationCulture =
-                    resourceLoader.startOptions.applicationCulture ||
-                    (navigator.languages && navigator.languages[0]);
-                if (satelliteResources) {
+                pdbsBeingLoaded.forEach((r) => addResourceAsAssembly(r, r.name));
+                Blazor._internal.dotNetCriticalError = (message) =>
+                    printErr(message || "(null)");
+                // Wire-up callbacks for satellite assemblies. Blazor will call these as part of the application
+                // startup sequence to load satellite assemblies for the application's culture.
+                Blazor._internal.getSatelliteAssemblies = (
+                    culturesToLoadDotNetArray
+                ) => {
+                    const culturesToLoad = BINDING.mono_array_to_js_array(
+                        culturesToLoadDotNetArray
+                    );
+                    const satelliteResources =
+                        resourceLoader.bootConfig.resources.satelliteResources;
+                    if (satelliteResources) {
+                        const resourcePromises = Promise.all(
+                            culturesToLoad
+                                .filter((culture) => satelliteResources.hasOwnProperty(culture))
+                                .map((culture) =>
+                                    resourceLoader.loadResources(
+                                        satelliteResources[culture],
+                                        (fileName) => `_framework/${fileName}`,
+                                        "assembly"
+                                    )
+                                )
+                                .reduce((previous, next) => previous.concat(next), new Array())
+                                .map(async (resource) => (await resource.response).arrayBuffer())
+                        );
+                        return BINDING.js_to_mono_obj(
+                            resourcePromises.then((resourcesToLoad) => {
+                                if (resourcesToLoad.length) {
+                                    Blazor._internal.readSatelliteAssemblies = () => {
+                                        const array = BINDING.mono_obj_array_new(
+                                            resourcesToLoad.length
+                                        );
+                                        for (let i = 0; i < resourcesToLoad.length; i++) {
+                                            BINDING.mono_obj_array_set(
+                                                array,
+                                                i,
+                                                BINDING.js_typed_array_to_array(
+                                                    new Uint8Array(resourcesToLoad[i])
+                                                )
+                                            );
+                                        }
+                                        return array;
+                                    };
+                                }
+                                return resourcesToLoad.length;
+                            })
+                        );
+                    }
+                    return BINDING.js_to_mono_obj(Promise.resolve(0));
+                };
+                const lazyResources = {};
+                Blazor._internal.getLazyAssemblies = (assembliesToLoadDotNetArray) => {
+                    const assembliesToLoad = BINDING.mono_array_to_js_array(
+                        assembliesToLoadDotNetArray
+                    );
+                    const lazyAssemblies = resourceLoader.bootConfig.resources.lazyAssembly;
+                    if (!lazyAssemblies) {
+                        throw new Error(
+                            "No assemblies have been marked as lazy-loadable. Use the 'BlazorWebAssemblyLazyLoad' item group in your project file to enable lazy loading an assembly."
+                        );
+                    }
+                    const assembliesMarkedAsLazy = assembliesToLoad.filter((assembly) =>
+                        lazyAssemblies.hasOwnProperty(assembly)
+                    );
+                    if (assembliesMarkedAsLazy.length !== assembliesToLoad.length) {
+                        const notMarked = assembliesToLoad.filter(
+                            (assembly) => !assembliesMarkedAsLazy.includes(assembly)
+                        );
+                        throw new Error(
+                            `${notMarked.join()} must be marked with 'BlazorWebAssemblyLazyLoad' item group in your project file to allow lazy-loading.`
+                        );
+                    }
+                    let pdbPromises;
+                    if (hasDebuggingEnabled()) {
+                        const pdbs = resourceLoader.bootConfig.resources.pdb;
+                        const pdbsToLoad = assembliesMarkedAsLazy.map((a) =>
+                            changeExtension(a, ".pdb")
+                        );
+                        if (pdbs) {
+                            pdbPromises = Promise.all(
+                                pdbsToLoad
+                                    .map((pdb) =>
+                                        lazyAssemblies.hasOwnProperty(pdb)
+                                            ? resourceLoader.loadResource(
+                                                pdb,
+                                                `_framework/${pdb}`,
+                                                lazyAssemblies[pdb],
+                                                "pdb"
+                                            )
+                                            : null
+                                    )
+                                    .map(async (resource) =>
+                                        resource ? (await resource.response).arrayBuffer() : null
+                                    )
+                            );
+                        }
+                    }
                     const resourcePromises = Promise.all(
-                        culturesToLoad
-                            .filter((culture) => satelliteResources.hasOwnProperty(culture))
-                            .map((culture) =>
-                                resourceLoader.loadResources(
-                                    satelliteResources[culture],
-                                    (fileName) => `_framework/${fileName}`,
+                        assembliesMarkedAsLazy
+                            .map((assembly) =>
+                                resourceLoader.loadResource(
+                                    assembly,
+                                    `_framework/${assembly}`,
+                                    lazyAssemblies[assembly],
                                     "assembly"
                                 )
                             )
-                            .reduce((previous, next) => previous.concat(next), new Array())
                             .map(async (resource) => (await resource.response).arrayBuffer())
                     );
                     return BINDING.js_to_mono_obj(
-                        resourcePromises.then((resourcesToLoad) => {
-                            if (resourcesToLoad.length) {
-                                Blazor._internal.readSatelliteAssemblies = () => {
-                                    const array = BINDING.mono_obj_array_new(
-                                        resourcesToLoad.length
+                        Promise.all([resourcePromises, pdbPromises]).then((values) => {
+                            lazyResources["assemblies"] = values[0];
+                            lazyResources["pdbs"] = values[1];
+                            if (lazyResources["assemblies"].length) {
+                                Blazor._internal.readLazyAssemblies = () => {
+                                    const { assemblies } = lazyResources;
+                                    if (!assemblies) {
+                                        return BINDING.mono_obj_array_new(0);
+                                    }
+                                    const assemblyBytes = BINDING.mono_obj_array_new(
+                                        assemblies.length
                                     );
-                                    for (var i = 0; i < resourcesToLoad.length; i++) {
+                                    for (let i = 0; i < assemblies.length; i++) {
+                                        const assembly = assemblies[i];
                                         BINDING.mono_obj_array_set(
-                                            array,
+                                            assemblyBytes,
                                             i,
-                                            BINDING.js_typed_array_to_array(
-                                                new Uint8Array(resourcesToLoad[i])
-                                            )
+                                            BINDING.js_typed_array_to_array(new Uint8Array(assembly))
                                         );
                                     }
-                                    return array;
+                                    return assemblyBytes;
+                                };
+                                Blazor._internal.readLazyPdbs = () => {
+                                    const { assemblies, pdbs } = lazyResources;
+                                    if (!assemblies) {
+                                        return BINDING.mono_obj_array_new(0);
+                                    }
+                                    const pdbBytes = BINDING.mono_obj_array_new(assemblies.length);
+                                    for (let i = 0; i < assemblies.length; i++) {
+                                        const pdb =
+                                            pdbs && pdbs[i]
+                                                ? new Uint8Array(pdbs[i])
+                                                : new Uint8Array();
+                                        BINDING.mono_obj_array_set(
+                                            pdbBytes,
+                                            i,
+                                            BINDING.js_typed_array_to_array(pdb)
+                                        );
+                                    }
+                                    return pdbBytes;
                                 };
                             }
-                            return resourcesToLoad.length;
+                            return lazyResources["assemblies"].length;
                         })
                     );
-                }
-                return BINDING.js_to_mono_obj(Promise.resolve(0));
+                };
             };
-            const lazyResources = {};
-            Blazor._internal.getLazyAssemblies = (assembliesToLoadDotNetArray) => {
-                const assembliesToLoad = BINDING.mono_array_to_js_array(
-                    assembliesToLoadDotNetArray
-                );
-                const lazyAssemblies = resourceLoader.bootConfig.resources.lazyAssembly;
-                if (!lazyAssemblies) {
-                    throw new Error(
-                        "No assemblies have been marked as lazy-loadable. Use the 'BlazorWebAssemblyLazyLoad' item group in your project file to enable lazy loading an assembly."
-                    );
+            const postRun = () => {
+                if (
+                    resourceLoader.bootConfig.debugBuild &&
+                    resourceLoader.bootConfig.cacheBootResources
+                ) {
+                    resourceLoader.logToConsole();
                 }
-                var assembliesMarkedAsLazy = assembliesToLoad.filter((assembly) =>
-                    lazyAssemblies.hasOwnProperty(assembly)
-                );
-                if (assembliesMarkedAsLazy.length != assembliesToLoad.length) {
-                    var notMarked = assembliesToLoad.filter(
-                        (assembly) => !assembliesMarkedAsLazy.includes(assembly)
-                    );
-                    throw new Error(
-                        `${notMarked.join()} must be marked with 'BlazorWebAssemblyLazyLoad' item group in your project file to allow lazy-loading.`
-                    );
-                }
-                let pdbPromises;
-                if (hasDebuggingEnabled()) {
-                    const pdbs = resourceLoader.bootConfig.resources.pdb;
-                    const pdbsToLoad = assembliesMarkedAsLazy.map((a) =>
-                        changeExtension(a, ".pdb")
-                    );
-                    if (pdbs) {
-                        pdbPromises = Promise.all(
-                            pdbsToLoad
-                                .map((pdb) =>
-                                    lazyAssemblies.hasOwnProperty(pdb)
-                                        ? resourceLoader.loadResource(
-                                            pdb,
-                                            `_framework/${pdb}`,
-                                            lazyAssemblies[pdb],
-                                            "pdb"
-                                        )
-                                        : null
-                                )
-                                .map(async (resource) =>
-                                    resource ? (await resource.response).arrayBuffer() : null
-                                )
+                resourceLoader.purgeUnusedCacheEntriesAsync(); // Don't await - it's fine to run in background
+                if (resourceLoader.bootConfig.icuDataMode === ICUDataMode.Sharded) {
+                    MONO.mono_wasm_setenv("__BLAZOR_SHARDED_ICU", "1");
+                    if (resourceLoader.startOptions.applicationCulture) {
+                        // If a culture is specified via start options use that to initialize the Emscripten \  .NET culture.
+                        MONO.mono_wasm_setenv(
+                            "LANG",
+                            `${resourceLoader.startOptions.applicationCulture}.UTF-8`
                         );
                     }
                 }
-                const resourcePromises = Promise.all(
-                    assembliesMarkedAsLazy
-                        .map((assembly) =>
-                            resourceLoader.loadResource(
-                                assembly,
-                                `_framework/${assembly}`,
-                                lazyAssemblies[assembly],
-                                "assembly"
-                            )
-                        )
-                        .map(async (resource) => (await resource.response).arrayBuffer())
-                );
-                return BINDING.js_to_mono_obj(
-                    Promise.all([resourcePromises, pdbPromises]).then((values) => {
-                        lazyResources["assemblies"] = values[0];
-                        lazyResources["pdbs"] = values[1];
-                        if (lazyResources["assemblies"].length) {
-                            Blazor._internal.readLazyAssemblies = () => {
-                                const { assemblies } = lazyResources;
-                                if (!assemblies) {
-                                    return BINDING.mono_obj_array_new(0);
-                                }
-                                const assemblyBytes = BINDING.mono_obj_array_new(
-                                    assemblies.length
-                                );
-                                for (let i = 0; i < assemblies.length; i++) {
-                                    const assembly = assemblies[i];
-                                    BINDING.mono_obj_array_set(
-                                        assemblyBytes,
-                                        i,
-                                        BINDING.js_typed_array_to_array(new Uint8Array(assembly))
-                                    );
-                                }
-                                return assemblyBytes;
-                            };
-                            Blazor._internal.readLazyPdbs = () => {
-                                const { assemblies, pdbs } = lazyResources;
-                                if (!assemblies) {
-                                    return BINDING.mono_obj_array_new(0);
-                                }
-                                const pdbBytes = BINDING.mono_obj_array_new(assemblies.length);
-                                for (let i = 0; i < assemblies.length; i++) {
-                                    const pdb =
-                                        pdbs && pdbs[i]
-                                            ? new Uint8Array(pdbs[i])
-                                            : new Uint8Array();
-                                    BINDING.mono_obj_array_set(
-                                        pdbBytes,
-                                        i,
-                                        BINDING.js_typed_array_to_array(pdb)
-                                    );
-                                }
-                                return pdbBytes;
-                            };
-                        }
-                        return lazyResources["assemblies"].length;
-                    })
-                );
-            };
-        });
-        module.postRun.push(() => {
-            if (
-                resourceLoader.bootConfig.debugBuild &&
-                resourceLoader.bootConfig.cacheBootResources
-            ) {
-                resourceLoader.logToConsole();
-            }
-            resourceLoader.purgeUnusedCacheEntriesAsync(); // Don't await - it's fine to run in background
-            if (resourceLoader.bootConfig.icuDataMode === ICUDataMode.Sharded) {
-                MONO.mono_wasm_setenv("__BLAZOR_SHARDED_ICU", "1");
-                if (resourceLoader.startOptions.applicationCulture) {
-                    // If a culture is specified via start options use that to initialize the Emscripten \  .NET culture.
+                let timeZone = "UTC";
+                try {
+                    timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                } catch { }
+                MONO.mono_wasm_setenv("TZ", timeZone || "UTC");
+                if (resourceLoader.bootConfig.modifiableAssemblies) {
+                    // Configure the app to enable hot reload in Development.
                     MONO.mono_wasm_setenv(
-                        "LANG",
-                        `${resourceLoader.startOptions.applicationCulture}.UTF-8`
+                        "DOTNET_MODIFIABLE_ASSEMBLIES",
+                        resourceLoader.bootConfig.modifiableAssemblies
                     );
                 }
-            }
-            let timeZone = "UTC";
-            try {
-                timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            } catch { }
-            MONO.mono_wasm_setenv("TZ", timeZone || "UTC");
-            if (resourceLoader.bootConfig.modifiableAssemblies) {
-                // Configure the app to enable hot reload in Development.
-                MONO.mono_wasm_setenv(
-                    "DOTNET_MODIFIABLE_ASSEMBLIES",
-                    resourceLoader.bootConfig.modifiableAssemblies
+                if (resourceLoader.bootConfig.aspnetCoreBrowserTools) {
+                    // See https://github.com/dotnet/aspnetcore/issues/37357#issuecomment-941237000
+                    MONO.mono_wasm_setenv(
+                        "__ASPNETCORE_BROWSER_TOOLS",
+                        resourceLoader.bootConfig.aspnetCoreBrowserTools
+                    );
+                }
+                // -1 enables debugging with logging disabled. 0 disables debugging entirely.
+                MONO.mono_wasm_load_runtime(
+                    appBinDirName,
+                    hasDebuggingEnabled() ? -1 : 0
                 );
+                MONO.mono_wasm_runtime_ready();
+                try {
+                    BINDING.bind_static_method("invalid-fqn", "");
+                } catch (e) {
+                    // HOTFIX: until https://github.com/dotnet/runtime/pull/72275
+                    // this would always throw, but it will initialize runtime interop as side-effect
+                }
+                // makes Blazor._internal visible to [JSImport]
+                IMPORTS.Blazor = { _internal: Blazor._internal };
+                attachInteropInvoker();
+                runtimeReadyResolve(api);
+            };
+            async function addResourceAsAssembly(dependency, loadAsName) {
+                const runDependencyId = `blazor:${dependency.name}`;
+                Module.addRunDependency(runDependencyId);
+                try {
+                    // Wait for the data to be loaded and verified
+                    const dataBuffer = await dependency.response.then((r) =>
+                        r.arrayBuffer()
+                    );
+                    // Load it into the Mono runtime
+                    const data = new Uint8Array(dataBuffer);
+                    const heapAddress = Module._malloc(data.length);
+                    const heapMemory = new Uint8Array(
+                        Module.HEAPU8.buffer,
+                        heapAddress,
+                        data.length
+                    );
+                    heapMemory.set(data);
+                    MONO.mono_wasm_add_assembly(loadAsName, heapAddress, data.length);
+                    MONO.loaded_files.push(toAbsoluteUrl(dependency.url));
+                } catch (errorInfo) {
+                    runtimeReadyReject(errorInfo);
+                    return;
+                }
+                Module.removeRunDependency(runDependencyId);
             }
-            if (resourceLoader.bootConfig.aspnetCoreBrowserTools) {
-                // See https://github.com/dotnet/aspnetcore/issues/37357#issuecomment-941237000
-                MONO.mono_wasm_setenv(
-                    "__ASPNETCORE_BROWSER_TOOLS",
-                    resourceLoader.bootConfig.aspnetCoreBrowserTools
-                );
-            }
-            const load_runtime = cwrap("mono_wasm_load_runtime", null, [
-                "string",
-                "number",
-            ]);
-            // -1 enables debugging with logging disabled. 0 disables debugging entirely.
-            load_runtime(appBinDirName, hasDebuggingEnabled() ? -1 : 0);
-            MONO.mono_wasm_runtime_ready();
-            attachInteropInvoker();
-            onReady();
+            const dotnetModuleConfig = {
+                ...moduleConfig,
+                disableDotnet6Compatibility: false,
+                preRun: [preRun, ...existingPreRun],
+                postRun: [postRun, ...existingPostRun],
+                print,
+                printErr,
+                instantiateWasm,
+                onRuntimeInitialized,
+            };
+            return dotnetModuleConfig;
         });
-        return module;
-        async function addResourceAsAssembly(dependency, loadAsName) {
-            const runDependencyId = `blazor:${dependency.name}`;
-            addRunDependency(runDependencyId);
-            try {
-                // Wait for the data to be loaded and verified
-                const dataBuffer = await dependency.response.then((r) =>
-                    r.arrayBuffer()
-                );
-                // Load it into the Mono runtime
-                const data = new Uint8Array(dataBuffer);
-                const heapAddress = Module._malloc(data.length);
-                const heapMemory = new Uint8Array(
-                    Module.HEAPU8.buffer,
-                    heapAddress,
-                    data.length
-                );
-                heapMemory.set(data);
-                mono_wasm_add_assembly(loadAsName, heapAddress, data.length);
-                MONO.loaded_files.push(toAbsoluteUrl(dependency.url));
-            } catch (errorInfo) {
-                onError(errorInfo);
-                return;
-            }
-            removeRunDependency(runDependencyId);
-        }
+        return await runtimeReady;
     }
     const anchorTagForAbsoluteUrlConversions = document.createElement("a");
     function toAbsoluteUrl(possiblyRelativeUrl) {
@@ -4004,8 +4291,8 @@
         });
     }
     async function loadTimezone(timeZoneResource) {
-        const runDependencyId = `blazor:timezonedata`;
-        addRunDependency(runDependencyId);
+        const runDependencyId = "blazor:timezonedata";
+        Module.addRunDependency(runDependencyId);
         const request = await timeZoneResource.response;
         const arrayBuffer = await request.arrayBuffer();
         Module["FS_createPath"]("/", "usr", true, true);
@@ -4015,7 +4302,7 @@
             new Uint8Array(arrayBuffer),
             "/usr/share/zoneinfo/"
         );
-        removeRunDependency(runDependencyId);
+        Module.removeRunDependency(runDependencyId);
     }
     function getICUResourceName(bootConfig, culture) {
         const combinedICUResourceName = "icudt.dat";
@@ -4032,44 +4319,51 @@
         }
     }
     async function loadICUData(icuDataResource) {
-        const runDependencyId = `blazor:icudata`;
-        addRunDependency(runDependencyId);
+        const runDependencyId = "blazor:icudata";
+        Module.addRunDependency(runDependencyId);
         const request = await icuDataResource.response;
         const array = new Uint8Array(await request.arrayBuffer());
         const offset = MONO.mono_wasm_load_bytes_into_heap(array);
         if (!MONO.mono_wasm_load_icu_data(offset)) {
             throw new Error("Error loading ICU asset.");
         }
-        removeRunDependency(runDependencyId);
+        Module.removeRunDependency(runDependencyId);
     }
     async function compileWasmModule(wasmResource, imports) {
-        // This is the same logic as used in emscripten's generated js. We can't use emscripten's js because
-        // it doesn't provide any method for supplying a custom response provider, and we want to integrate
-        // with our resource loader cache.
-        if (typeof WebAssembly["instantiateStreaming"] === "function") {
-            try {
-                const streamingResult = await WebAssembly["instantiateStreaming"](
-                    wasmResource.response,
-                    imports
-                );
-                return streamingResult.instance;
-            } catch (ex) {
-                console.info(
-                    "Streaming compilation failed. Falling back to ArrayBuffer instantiation. ",
-                    ex
+        var _a;
+        const wasmResourceResponse = await wasmResource.response;
+        // The instantiateStreaming spec explicitly requires the following exact MIME type (with no trailing parameters, etc.)
+        // https://webassembly.github.io/spec/web-api/#dom-webassembly-instantiatestreaming
+        const hasWasmContentType =
+            ((_a = wasmResourceResponse.headers) === null || _a === void 0
+                ? void 0
+                : _a.get("content-type")) === "application/wasm";
+        if (
+            hasWasmContentType &&
+            typeof WebAssembly.instantiateStreaming === "function"
+        ) {
+            // We can use streaming compilation. We know this shouldn't fail due to the content-type header being wrong,
+            // as we already just checked that. So if this fails for some other reason we'll treat it as fatal.
+            const streamingResult = await WebAssembly.instantiateStreaming(
+                wasmResourceResponse,
+                imports
+            );
+            return streamingResult.instance;
+        } else {
+            if (!hasWasmContentType) {
+                // In most cases the developer should fix this. It's unusual enough that we don't mind logging a warning each time.
+                console.warn(
+                    'WebAssembly resource does not have the expected content type "application/wasm", so falling back to slower ArrayBuffer instantiation.'
                 );
             }
+            // Fall back on ArrayBuffer instantiation.
+            const arrayBuffer = await wasmResourceResponse.arrayBuffer();
+            const arrayBufferResult = await WebAssembly.instantiate(
+                arrayBuffer,
+                imports
+            );
+            return arrayBufferResult.instance;
         }
-        // If that's not available or fails (e.g., due to incorrect content-type header),
-        // fall back to ArrayBuffer instantiation
-        const arrayBuffer = await wasmResource.response.then((r) =>
-            r.arrayBuffer()
-        );
-        const arrayBufferResult = await WebAssembly.instantiate(
-            arrayBuffer,
-            imports
-        );
-        return arrayBufferResult.instance;
     }
     function changeExtension(filename, newExtensionWithLeadingDot) {
         const lastDotIndex = filename.lastIndexOf(".");
@@ -4114,6 +4408,7 @@
             }
         }
     } // CONCATENATED MODULE: ./Rendering/RenderBatch/SharedMemoryRenderBatch.ts
+
 
     // Used when running on Mono WebAssembly for shared-memory interop. The code here encapsulates
     // our knowledge of the memory layout of RenderBatch and all referenced types.
@@ -4229,6 +4524,7 @@
             document.currentScript.getAttribute("autostart") !== "false"
         );
     } // CONCATENATED MODULE: ./Platform/WebAssemblyResourceLoader.ts
+
 
     const networkFetchCacheMode = "no-cache";
     class WebAssemblyResourceLoader {
@@ -4450,6 +4746,7 @@
         }
     } // CONCATENATED MODULE: ./Platform/WebAssemblyConfigLoader.ts
 
+
     class WebAssemblyConfigLoader {
         static async initAsync(bootConfigResult) {
             Blazor._internal.getApplicationEnvironment = () =>
@@ -4483,6 +4780,7 @@
             }
         }
     } // CONCATENATED MODULE: ./Platform/WebAssemblyComponentAttacher.ts
+
 
     class WebAssemblyComponentAttacher {
         constructor(components) {
@@ -4550,7 +4848,7 @@
         return discoveredComponents.sort((a, b) => a.sequence - b.sequence);
     }
     const blazorStateCommentRegularExpression =
-        /^\s*Blazor-Component-State:(?<state>[a-zA-Z0-9\+\/=]+)$/;
+        /^\s*Blazor-Component-State:(?<state>[a-zA-Z0-9+/=]+)$/;
     function discoverPersistedState(node) {
         var _a;
         if (node.nodeType === Node.COMMENT_NODE) {
@@ -4855,6 +5153,7 @@
     }
     WebAssemblyComponentDescriptor.globalId = 1; // CONCATENATED MODULE: ./JSInitializers/JSInitializers.ts
 
+
     class JSInitializer {
         constructor() {
             this.afterStartedCallbacks = [];
@@ -4894,6 +5193,7 @@
             );
         }
     } // CONCATENATED MODULE: ./JSInitializers/JSInitializers.WebAssembly.ts
+
 
     async function fetchAndInvokeInitializers(bootConfig, options) {
         const initializers = bootConfig.resources.libraryInitializers;
@@ -4982,12 +5282,26 @@
         Blazor._internal.navigationManager.getUnmarshalledLocationHref = () =>
             BINDING.js_string_to_mono_string(getLocationHref());
         Blazor._internal.navigationManager.listenForNavigationEvents(
-            async (uri, intercepted) => {
+            async (uri, state, intercepted) => {
                 await DotNet.invokeMethodAsync(
                     "Microsoft.AspNetCore.Components.WebAssembly",
                     "NotifyLocationChanged",
                     uri,
+                    state,
                     intercepted
+                );
+            },
+            async (callId, uri, state, intercepted) => {
+                const shouldContinueNavigation = await DotNet.invokeMethodAsync(
+                    "Microsoft.AspNetCore.Components.WebAssembly",
+                    "NotifyLocationChangingAsync",
+                    uri,
+                    state,
+                    intercepted
+                );
+                Blazor._internal.navigationManager.endLocationChanging(
+                    callId,
+                    shouldContinueNavigation
                 );
             }
         );
@@ -5064,6 +5378,7 @@
         // only end when the app finishes running
         jsInitializer.invokeAfterStartedCallbacks(Blazor);
     }
+    // obsolete, legacy, don't use for new code!
     function invokeJSFromDotNet(callInfo, arg0, arg1, arg2) {
         const functionIdentifier = monoPlatform.readStringField(callInfo, 0);
         const resultType = monoPlatform.readInt32Field(callInfo, 4);
@@ -5105,10 +5420,11 @@
                     return result;
                 case DotNet.JSCallResultType.JSObjectReference:
                     return DotNet.createJSObjectReference(result).__jsObjectId;
-                case DotNet.JSCallResultType.JSStreamReference:
+                case DotNet.JSCallResultType.JSStreamReference: {
                     const streamReference = DotNet.createJSStreamReference(result);
                     const resultJson = JSON.stringify(streamReference);
                     return BINDING.js_string_to_mono_string(resultJson);
+                }
                 case DotNet.JSCallResultType.JSVoidResult:
                     return null;
                 default:
